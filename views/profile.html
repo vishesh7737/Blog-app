@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BlogHub – Profile</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="stylesheet" href="/css/profile.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+</head>
+<body>
+  <nav class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-logo"><i class="fas fa-feather-alt"></i> BlogHub</a>
+      <div class="nav-links" id="navLinks">
+        <a href="/" class="nav-link">Home</a>
+        <div id="authSection" class="nav-auth"></div>
+      </div>
+      <button class="hamburger" id="hamburger"><i class="fas fa-bars"></i></button>
+    </div>
+  </nav>
+
+  <div id="profileApp" style="margin-top:64px; min-height:90vh;">
+    <div class="loading" style="padding:120px">
+      <div class="spinner"></div><p>Loading profile...</p>
+    </div>
+  </div>
+
+  <!-- EDIT PROFILE MODAL -->
+  <div class="modal-overlay" id="editModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-user-edit"></i> Edit Profile</h3>
+        <button onclick="closeModal('editModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert" id="editAlert" style="display:none"></div>
+        <div class="form-group">
+          <label>Profile Picture URL</label>
+          <input type="url" id="editAvatar" class="form-input" placeholder="https://..."/>
+        </div>
+        <div class="form-group">
+          <label>Bio</label>
+          <textarea id="editBio" class="form-input" rows="3" maxlength="300" placeholder="Tell the world about yourself..."></textarea>
+          <small id="bioCount">0/300</small>
+        </div>
+        <div class="form-group">
+          <label>Website</label>
+          <input type="url" id="editWebsite" class="form-input" placeholder="https://yoursite.com"/>
+        </div>
+        <div class="form-group">
+          <label><i class="fab fa-twitter" style="color:#1da1f2"></i> Twitter</label>
+          <input type="text" id="editTwitter" class="form-input" placeholder="@username"/>
+        </div>
+        <div class="form-group">
+          <label><i class="fab fa-github"></i> GitHub</label>
+          <input type="text" id="editGithub" class="form-input" placeholder="username"/>
+        </div>
+        <div class="form-group">
+          <label><i class="fab fa-linkedin" style="color:#0077b5"></i> LinkedIn</label>
+          <input type="text" id="editLinkedin" class="form-input" placeholder="username"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveProfile()"><i class="fas fa-save"></i> Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD MODAL -->
+  <div class="modal-overlay" id="pwModal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-lock"></i> Change Password</h3>
+        <button onclick="closeModal('pwModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert" id="pwAlert" style="display:none"></div>
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" id="currentPw" class="form-input" placeholder="Your current password"/>
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="newPw" class="form-input" placeholder="Min 6 characters"/>
+        </div>
+        <div class="form-group">
+          <label>Confirm New Password</label>
+          <input type="password" id="confirmPw" class="form-input" placeholder="Repeat new password"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('pwModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="changePassword()"><i class="fas fa-key"></i> Update Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast"></div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentUser = null;
+    let profileData = null;
+    let activeTab = 'posts';
+
+    // Figure out whose profile to show
+    const pathId = window.location.pathname.split('/profile/')[1];
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      currentUser = await checkAuth();
+      const targetId = pathId || currentUser.userId;
+      if (!targetId) { window.location.href = '/auth/login'; return; }
+      await loadProfile(targetId);
+    });
+
+    async function loadProfile(userId) {
+      try {
+        const res = await fetch(`/api/users/${userId}`);
+        if (!res.ok) throw new Error('Not found');
+        profileData = await res.json();
+        renderProfile();
+      } catch {
+        document.getElementById('profileApp').innerHTML = '<div class="container error-state"><i class="fas fa-user-slash"></i><h2>User Not Found</h2><a href="/" class="btn btn-primary">Go Home</a></div>';
+      }
+    }
+
+    function renderProfile() {
+      const { user, posts, stats } = profileData;
+      const isOwn = currentUser?.userId === user._id;
+      const isFollowing = user.followers?.some(f => f._id === currentUser?.userId || f === currentUser?.userId);
+      const initials = user.username.charAt(0).toUpperCase();
+      const joined = new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+      document.title = `${user.username} – BlogHub`;
+
+      document.getElementById('profileApp').innerHTML = `
+        <!-- PROFILE HERO -->
+        <div class="profile-hero">
+          <div class="profile-hero-bg"></div>
+          <div class="container profile-hero-content">
+            <div class="profile-avatar-wrap">
+              ${user.avatar
+                ? `<img src="${user.avatar}" class="profile-avatar-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="profile-avatar-fallback" style="display:none">${initials}</div>`
+                : `<div class="profile-avatar-fallback">${initials}</div>`
+              }
+              ${user.banned ? '<span class="banned-badge"><i class="fas fa-ban"></i> Banned</span>' : ''}
+            </div>
+            <div class="profile-info">
+              <div class="profile-name-row">
+                <h1>${user.username}
+                  ${user.role === 'admin' ? '<span class="role-badge admin-badge"><i class="fas fa-shield-alt"></i> Admin</span>' : ''}
+                </h1>
+              </div>
+              <p class="profile-bio">${user.bio || '<em style="color:var(--text-light)">No bio yet.</em>'}</p>
+              <div class="profile-meta-row">
+                <span><i class="fas fa-calendar-alt"></i> Joined ${joined}</span>
+                ${user.website ? `<a href="${user.website}" target="_blank"><i class="fas fa-globe"></i> Website</a>` : ''}
+                ${user.social?.twitter ? `<a href="https://twitter.com/${user.social.twitter.replace('@','')}" target="_blank"><i class="fab fa-twitter"></i> Twitter</a>` : ''}
+                ${user.social?.github ? `<a href="https://github.com/${user.social.github}" target="_blank"><i class="fab fa-github"></i> GitHub</a>` : ''}
+                ${user.social?.linkedin ? `<a href="https://linkedin.com/in/${user.social.linkedin}" target="_blank"><i class="fab fa-linkedin"></i> LinkedIn</a>` : ''}
+              </div>
+              <div class="profile-action-row">
+                ${isOwn ? `
+                  <button class="btn btn-primary" onclick="openEditModal()"><i class="fas fa-edit"></i> Edit Profile</button>
+                  <button class="btn btn-outline" onclick="openModal('pwModal')"><i class="fas fa-key"></i> Change Password</button>
+                ` : currentUser?.loggedIn ? `
+                  <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" onclick="toggleFollow('${user._id}')">
+                    <i class="fas fa-${isFollowing ? 'user-minus' : 'user-plus'}"></i>
+                    ${isFollowing ? 'Unfollow' : 'Follow'}
+                  </button>
+                ` : `<a href="/auth/login" class="btn btn-primary">Login to Follow</a>`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STATS BAR -->
+        <div class="stats-bar">
+          <div class="container stats-bar-inner">
+            <div class="stat-item">
+              <span class="stat-num">${stats.totalPosts}</span>
+              <span class="stat-lbl">Posts</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num">${stats.totalLikes}</span>
+              <span class="stat-lbl">Likes Received</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num">${stats.totalViews}</span>
+              <span class="stat-lbl">Total Views</span>
+            </div>
+            <div class="stat-item" id="followersStatItem">
+              <span class="stat-num">${user.followers?.length || 0}</span>
+              <span class="stat-lbl">Followers</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-num">${user.following?.length || 0}</span>
+              <span class="stat-lbl">Following</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABS + CONTENT -->
+        <div class="container profile-body">
+          <div class="profile-tabs">
+            <button class="ptab active" data-tab="posts" onclick="switchTab('posts', this)"><i class="fas fa-newspaper"></i> Posts</button>
+            ${isOwn ? `<button class="ptab" data-tab="bookmarks" onclick="switchTab('bookmarks', this)"><i class="fas fa-bookmark"></i> Bookmarks</button>` : ''}
+            ${isOwn ? `<button class="ptab" data-tab="drafts" onclick="switchTab('drafts', this)"><i class="fas fa-file-alt"></i> Drafts</button>` : ''}
+          </div>
+          <div id="tabContent" class="profile-tab-content"></div>
+        </div>`;
+
+      switchTab('posts');
+
+      // Prefill edit modal
+      if (isOwn) {
+        document.getElementById('editAvatar').value = user.avatar || '';
+        document.getElementById('editBio').value = user.bio || '';
+        document.getElementById('editWebsite').value = user.website || '';
+        document.getElementById('editTwitter').value = user.social?.twitter || '';
+        document.getElementById('editGithub').value = user.social?.github || '';
+        document.getElementById('editLinkedin').value = user.social?.linkedin || '';
+        document.getElementById('editBio').addEventListener('input', function() {
+          document.getElementById('bioCount').textContent = `${this.value.length}/300`;
+        });
+        document.getElementById('bioCount').textContent = `${(user.bio||'').length}/300`;
+      }
+    }
+
+    async function switchTab(tab, btn) {
+      activeTab = tab;
+      document.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      else document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+
+      const content = document.getElementById('tabContent');
+      content.innerHTML = '<div class="loading" style="padding:60px"><div class="spinner"></div></div>';
+
+      if (tab === 'posts') {
+        const posts = profileData.posts.filter(p => p.published);
+        renderPostList(posts, 'No published posts yet.', content);
+      } else if (tab === 'drafts') {
+        const posts = profileData.posts.filter(p => !p.published);
+        renderPostList(posts, 'No drafts.', content, true);
+      } else if (tab === 'bookmarks') {
+        const res = await fetch('/api/my-bookmarks');
+        const bks = await res.json();
+        renderPostList(bks, 'No bookmarks yet. Bookmark posts you love!', content);
+      }
+    }
+
+    function renderPostList(posts, emptyMsg, container, showEdit = false) {
+      if (!posts.length) {
+        container.innerHTML = `<div class="empty-state"><i class="fas fa-ghost"></i><p>${emptyMsg}</p></div>`;
+        return;
+      }
+      container.innerHTML = posts.map(post => {
+        const date = new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const img = post.coverImage || `https://picsum.photos/seed/${post._id}/600/300`;
+        return `
+          <div class="profile-post-row">
+            <img src="${img}" class="prow-img" onerror="this.src='https://picsum.photos/seed/${post._id}/600/300'"/>
+            <div class="prow-body">
+              <div class="prow-top">
+                <span class="post-category-badge" style="position:static;font-size:.75rem">${post.category}</span>
+                ${!post.published ? '<span class="draft-badge">Draft</span>' : ''}
+              </div>
+              <h3 onclick="window.location='/blog/${post.slug}'" class="prow-title">${post.title}</h3>
+              <p class="prow-excerpt">${post.excerpt || ''}</p>
+              <div class="prow-meta">
+                <span><i class="fas fa-calendar"></i> ${date}</span>
+                <span><i class="fas fa-heart"></i> ${post.likes?.length || 0}</span>
+                <span><i class="fas fa-eye"></i> ${post.views || 0}</span>
+                <span><i class="fas fa-comment"></i> ${post.comments?.length || 0}</span>
+              </div>
+            </div>
+            <div class="prow-actions">
+              <a href="/blog/${post.slug}" class="btn btn-outline btn-sm"><i class="fas fa-eye"></i> View</a>
+              ${showEdit || (currentUser?.userId === profileData.user._id) ? `
+                <a href="/blog/edit/${post._id}" class="btn btn-outline btn-sm"><i class="fas fa-edit"></i> Edit</a>
+                <button class="btn btn-sm" style="border:1.5px solid #ef4444;color:#ef4444" onclick="deletePost('${post._id}', this)"><i class="fas fa-trash"></i></button>
+              ` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function deletePost(id, btn) {
+      if (!confirm('Delete this post permanently?')) return;
+      const res = await fetch(`/api/posts/${id}`, { method: 'DELETE' });
+      if ((await res.json()).success) {
+        profileData.posts = profileData.posts.filter(p => p._id !== id);
+        btn.closest('.profile-post-row').remove();
+        showToast('Post deleted.', 'success');
+      }
+    }
+
+    async function toggleFollow(userId) {
+      if (!currentUser?.loggedIn) return;
+      const res = await fetch(`/api/users/${userId}/follow`, { method: 'POST' });
+      const data = await res.json();
+      const btn = document.getElementById('followBtn');
+      if (data.following) {
+        btn.innerHTML = '<i class="fas fa-user-minus"></i> Unfollow';
+        btn.className = 'btn btn-outline';
+      } else {
+        btn.innerHTML = '<i class="fas fa-user-plus"></i> Follow';
+        btn.className = 'btn btn-primary';
+      }
+      document.querySelector('#followersStatItem .stat-num').textContent = data.followersCount;
+      showToast(data.following ? 'Following!' : 'Unfollowed.', 'success');
+    }
+
+    function openEditModal() { openModal('editModal'); }
+
+    async function saveProfile() {
+      const payload = {
+        bio: document.getElementById('editBio').value,
+        avatar: document.getElementById('editAvatar').value,
+        website: document.getElementById('editWebsite').value,
+        social: {
+          twitter: document.getElementById('editTwitter').value,
+          github: document.getElementById('editGithub').value,
+          linkedin: document.getElementById('editLinkedin').value
+        }
+      };
+      const res = await fetch('/api/users/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeModal('editModal');
+        showToast('Profile updated!', 'success');
+        await loadProfile(currentUser.userId);
+      } else {
+        const alert = document.getElementById('editAlert');
+        alert.textContent = data.error;
+        alert.className = 'alert alert-error';
+        alert.style.display = 'block';
+      }
+    }
+
+    async function changePassword() {
+      const currentPw = document.getElementById('currentPw').value;
+      const newPw = document.getElementById('newPw').value;
+      const confirmPw = document.getElementById('confirmPw').value;
+      const alertEl = document.getElementById('pwAlert');
+
+      if (newPw !== confirmPw) {
+        alertEl.textContent = 'New passwords do not match.';
+        alertEl.className = 'alert alert-error'; alertEl.style.display = 'block'; return;
+      }
+      if (newPw.length < 6) {
+        alertEl.textContent = 'Password must be at least 6 characters.';
+        alertEl.className = 'alert alert-error'; alertEl.style.display = 'block'; return;
+      }
+
+      const res = await fetch('/api/users/change-password', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeModal('pwModal');
+        showToast('Password changed successfully!', 'success');
+        document.getElementById('currentPw').value = '';
+        document.getElementById('newPw').value = '';
+        document.getElementById('confirmPw').value = '';
+      } else {
+        alertEl.textContent = data.error;
+        alertEl.className = 'alert alert-error'; alertEl.style.display = 'block';
+      }
+    }
+
+    function openModal(id) {
+      document.getElementById(id).style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+      document.getElementById(id).style.display = 'none';
+      document.body.style.overflow = '';
+    }
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    });
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.className = `toast toast-${type} show`;
+      setTimeout(() => toast.className = 'toast', 3000);
+    }
+  </script>
+</body>
+</html>

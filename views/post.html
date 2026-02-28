@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BlogHub – Post</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+</head>
+<body>
+  <nav class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-logo"><i class="fas fa-feather-alt"></i> BlogHub</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Home</a>
+        <div id="authSection" class="nav-auth"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="post-page" id="postPage">
+    <div class="loading" style="min-height:60vh">
+      <div class="spinner"></div>
+      <p>Loading post...</p>
+    </div>
+  </div>
+
+  <!-- COMMENTS SECTION -->
+  <div class="comments-section container" id="commentsSection" style="display:none">
+    <h3 class="comments-title"><i class="fas fa-comments"></i> Comments <span id="commentsCount">0</span></h3>
+
+    <div id="commentForm" class="comment-form" style="display:none">
+      <div class="avatar-sm" id="commenterAvatar">?</div>
+      <div class="comment-input-wrap">
+        <textarea id="commentInput" placeholder="Share your thoughts..." rows="3" maxlength="500"></textarea>
+        <div class="comment-actions">
+          <span id="commentCharCount">0/500</span>
+          <button class="btn btn-primary btn-sm" onclick="submitComment()">Post Comment</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loginPromptComment" class="login-prompt" style="display:none">
+      <i class="fas fa-lock"></i>
+      <p>Please <a href="/auth/login">login</a> to leave a comment.</p>
+    </div>
+
+    <div id="commentsList" class="comments-list"></div>
+  </div>
+
+  <!-- RELATED POSTS -->
+  <section class="related-section container" id="relatedSection" style="display:none">
+    <h3>More Posts</h3>
+    <div class="posts-grid" id="relatedPosts"></div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-bottom">
+        <p>&copy; 2024 BlogHub. Built with ❤️ using Node.js & MongoDB</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script>
+    const slug = window.location.pathname.split('/blog/')[1];
+    let post = null;
+    let currentUser = null;
+
+    async function loadPost() {
+      try {
+        const res = await fetch(`/api/posts/${slug}`);
+        if (!res.ok) {
+          document.getElementById('postPage').innerHTML = `
+            <div class="container error-state">
+              <i class="fas fa-exclamation-triangle"></i>
+              <h2>Post Not Found</h2>
+              <a href="/" class="btn btn-primary">Go Home</a>
+            </div>`;
+          return;
+        }
+        post = await res.json();
+        renderPost(post);
+      } catch (err) {
+        document.getElementById('postPage').innerHTML = '<div class="container"><p>Error loading post.</p></div>';
+      }
+    }
+
+    function renderPost(post) {
+      const date = new Date(post.createdAt).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const readTime = Math.ceil(post.content.replace(/<[^>]*>/g, '').split(/\s+/).length / 200);
+      const img = post.coverImage || `https://picsum.photos/seed/${post._id}/1200/500`;
+      const initials = post.authorName ? post.authorName.charAt(0).toUpperCase() : '?';
+      const isAuthor = currentUser && currentUser.userId === post.author._id;
+      const liked = currentUser && post.likes.includes(currentUser.userId);
+
+      document.title = `${post.title} – BlogHub`;
+
+      document.getElementById('postPage').innerHTML = `
+        <div class="post-hero" style="background-image:url('${img}')">
+          <div class="post-hero-overlay">
+            <div class="container">
+              <div class="post-breadcrumb">
+                <a href="/"><i class="fas fa-home"></i> Home</a>
+                <span>/</span>
+                <a href="/?category=${post.category}">${post.category}</a>
+              </div>
+              <h1 class="post-hero-title">${post.title}</h1>
+              <div class="post-hero-meta">
+                <div class="avatar-sm">${initials}</div>
+                <div>
+                  <strong>${post.authorName || 'Anonymous'}</strong>
+                  <div class="post-hero-details">
+                    <span><i class="far fa-calendar"></i> ${date}</span>
+                    <span><i class="fas fa-clock"></i> ${readTime} min read</span>
+                    <span><i class="fas fa-eye"></i> ${post.views} views</span>
+                  </div>
+                </div>
+                ${post.tags?.map(t => `<span class="tag">#${t}</span>`).join('') || ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="post-body-container container">
+          <div class="post-content-area">
+            <div class="post-body">${post.content}</div>
+
+            <div class="post-actions">
+              <button class="action-btn like-btn ${liked ? 'liked' : ''}" id="likeBtn" onclick="toggleLike()">
+                <i class="fas fa-heart"></i>
+                <span id="likesCount">${post.likes.length}</span> Likes
+              </button>
+              <button class="action-btn" onclick="document.getElementById('commentsSection').scrollIntoView({behavior:'smooth'})">
+                <i class="fas fa-comment"></i>
+                ${post.comments.length} Comments
+              </button>
+              <button class="action-btn" onclick="sharePost()">
+                <i class="fas fa-share-alt"></i> Share
+              </button>
+              ${isAuthor ? `
+              <a href="/blog/edit/${post._id}" class="action-btn edit-btn">
+                <i class="fas fa-edit"></i> Edit
+              </a>
+              <button class="action-btn delete-btn" onclick="deletePost()">
+                <i class="fas fa-trash"></i> Delete
+              </button>` : ''}
+            </div>
+          </div>
+
+          <div class="post-sidebar">
+            <div class="author-card">
+              <div class="author-avatar">${initials}</div>
+              <h4>${post.authorName || 'Anonymous'}</h4>
+              <p>${post.author.bio || 'A passionate writer on BlogHub.'}</p>
+            </div>
+
+            <div class="post-meta-card">
+              <h4>Post Info</h4>
+              <div class="meta-row"><i class="fas fa-folder"></i> ${post.category}</div>
+              <div class="meta-row"><i class="fas fa-calendar"></i> ${date}</div>
+              <div class="meta-row"><i class="fas fa-eye"></i> ${post.views} views</div>
+              ${post.tags?.length ? `<div class="meta-row tags-row">${post.tags.map(t => `<span class="tag">#${t}</span>`).join(' ')}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+
+      // Show comments
+      document.getElementById('commentsSection').style.display = 'block';
+      document.getElementById('commentsCount').textContent = post.comments.length;
+      renderComments(post.comments);
+
+      // Load related
+      loadRelated(post.category, post._id);
+    }
+
+    function renderComments(comments) {
+      if (!comments.length) {
+        document.getElementById('commentsList').innerHTML = '<p class="no-comments">No comments yet. Be the first!</p>';
+        return;
+      }
+      document.getElementById('commentsList').innerHTML = comments.reverse().map(c => {
+        const date = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const isOwner = currentUser && currentUser.userId === (c.author?._id || c.author);
+        const initials = c.authorName ? c.authorName.charAt(0).toUpperCase() : '?';
+        return `
+          <div class="comment-item" id="comment-${c._id}">
+            <div class="avatar-sm">${initials}</div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <strong>${c.authorName}</strong>
+                <span class="comment-date">${date}</span>
+                ${isOwner ? `<button class="delete-comment" onclick="deleteComment('${c._id}')"><i class="fas fa-times"></i></button>` : ''}
+              </div>
+              <p>${c.content}</p>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function toggleLike() {
+      if (!currentUser?.loggedIn) return window.location.href = '/auth/login';
+      const res = await fetch(`/api/posts/${post._id}/like`, { method: 'POST' });
+      const data = await res.json();
+      document.getElementById('likesCount').textContent = data.likesCount;
+      document.getElementById('likeBtn').classList.toggle('liked', data.liked);
+    }
+
+    async function submitComment() {
+      const content = document.getElementById('commentInput').value.trim();
+      if (!content) return;
+      const res = await fetch(`/api/posts/${post._id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('commentInput').value = '';
+        post.comments.push(data.comment);
+        renderComments(post.comments);
+        document.getElementById('commentsCount').textContent = post.comments.length;
+      }
+    }
+
+    async function deleteComment(commentId) {
+      if (!confirm('Delete this comment?')) return;
+      await fetch(`/api/posts/${post._id}/comments/${commentId}`, { method: 'DELETE' });
+      post.comments = post.comments.filter(c => c._id !== commentId);
+      renderComments(post.comments);
+      document.getElementById('commentsCount').textContent = post.comments.length;
+    }
+
+    async function deletePost() {
+      if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) return;
+      const res = await fetch(`/api/posts/${post._id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) window.location.href = '/';
+    }
+
+    function sharePost() {
+      if (navigator.share) {
+        navigator.share({ title: post.title, url: window.location.href });
+      } else {
+        navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard!');
+      }
+    }
+
+    async function loadRelated(category, excludeId) {
+      const res = await fetch(`/api/posts?category=${category}&limit=3`);
+      const data = await res.json();
+      const related = data.posts.filter(p => p._id !== excludeId);
+      if (!related.length) return;
+
+      document.getElementById('relatedSection').style.display = 'block';
+      document.getElementById('relatedPosts').innerHTML = related.map(p => {
+        const img = p.coverImage || `https://picsum.photos/seed/${p._id}/600/300`;
+        const initials = p.authorName ? p.authorName.charAt(0).toUpperCase() : '?';
+        return `
+          <article class="post-card" onclick="window.location='/blog/${p.slug}'">
+            <div class="post-card-img">
+              <img src="${img}" alt="${p.title}" onerror="this.src='https://picsum.photos/seed/${p._id}/600/300'"/>
+            </div>
+            <div class="post-card-body">
+              <h3 class="post-title">${p.title}</h3>
+              <div class="post-meta">
+                <div class="author-info">
+                  <div class="avatar-sm">${initials}</div>
+                  <span>${p.authorName}</span>
+                </div>
+              </div>
+            </div>
+          </article>`;
+      }).join('');
+    }
+
+    // Comment character count
+    document.getElementById('commentInput').addEventListener('input', function() {
+      document.getElementById('commentCharCount').textContent = `${this.value.length}/500`;
+    });
+
+    // Init
+    window.addEventListener('DOMContentLoaded', async () => {
+      currentUser = await checkAuth();
+      if (currentUser?.loggedIn) {
+        document.getElementById('commentForm').style.display = 'flex';
+        document.getElementById('commenterAvatar').textContent = currentUser.username.charAt(0).toUpperCase();
+      } else {
+        document.getElementById('loginPromptComment').style.display = 'block';
+      }
+      loadPost();
+    });
+  </script>
+</body>
+</html>

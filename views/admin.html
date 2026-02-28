@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BlogHub – Admin Panel</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="stylesheet" href="/css/admin.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+</head>
+<body class="admin-body">
+
+  <!-- SIDEBAR -->
+  <aside class="admin-sidebar" id="adminSidebar">
+    <div class="sidebar-logo">
+      <i class="fas fa-feather-alt"></i>
+      <span>BlogHub</span>
+      <button class="sidebar-close" id="sidebarClose"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="sidebar-user" id="sidebarUser"></div>
+    <nav class="sidebar-nav">
+      <a class="snav-item active" data-section="dashboard" onclick="navigate('dashboard', this)">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </a>
+      <a class="snav-item" data-section="users" onclick="navigate('users', this)">
+        <i class="fas fa-users"></i> Users
+      </a>
+      <a class="snav-item" data-section="posts" onclick="navigate('posts', this)">
+        <i class="fas fa-newspaper"></i> Posts
+      </a>
+      <hr class="sidebar-hr"/>
+      <a href="/" class="snav-item">
+        <i class="fas fa-globe"></i> View Site
+      </a>
+      <a class="snav-item logout-nav" onclick="logout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </a>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="admin-main" id="adminMain">
+    <!-- TOP BAR -->
+    <header class="admin-topbar">
+      <div class="topbar-left">
+        <button class="topbar-menu-btn" id="menuBtn"><i class="fas fa-bars"></i></button>
+        <h2 id="pageTitle">Dashboard</h2>
+      </div>
+      <div class="topbar-right">
+        <span id="topbarUser" class="topbar-user"></span>
+        <a href="/blog/new" class="btn btn-primary btn-sm"><i class="fas fa-pen"></i> New Post</a>
+      </div>
+    </header>
+
+    <!-- CONTENT AREA -->
+    <main class="admin-content" id="adminContent">
+      <div class="loading" style="padding:100px">
+        <div class="spinner"></div><p>Loading...</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast"></div>
+
+  <!-- BAN MODAL -->
+  <div class="modal-overlay" id="banModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h3><i class="fas fa-ban"></i> Ban User</h3>
+        <button onclick="closeModal('banModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:16px;color:var(--text-muted)">Provide a reason for banning this user (optional):</p>
+        <input type="text" id="banReason" class="form-input" placeholder="e.g. Spam, inappropriate content..."/>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('banModal')">Cancel</button>
+        <button class="btn btn-primary" style="background:#ef4444;box-shadow:none" onclick="confirmBan()"><i class="fas fa-ban"></i> Confirm Ban</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentUser = null;
+    let banTargetId = null;
+
+    // Auth guard
+    window.addEventListener('DOMContentLoaded', async () => {
+      currentUser = await checkAuth();
+      if (!currentUser.loggedIn) { window.location.href = '/auth/login'; return; }
+      if (currentUser.role !== 'admin') { window.location.href = '/'; return; }
+
+      document.getElementById('sidebarUser').innerHTML = `
+        <div class="sidebar-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
+        <div><strong>${currentUser.username}</strong><br/><small>Administrator</small></div>`;
+      document.getElementById('topbarUser').textContent = `Hi, ${currentUser.username}`;
+
+      // Check URL section
+      const section = window.location.pathname.split('/admin/')[1] || 'dashboard';
+      navigate(section, document.querySelector(`[data-section="${section}"]`));
+    });
+
+    // Sidebar toggle
+    document.getElementById('menuBtn').addEventListener('click', () => {
+      document.getElementById('adminSidebar').classList.toggle('open');
+    });
+    document.getElementById('sidebarClose').addEventListener('click', () => {
+      document.getElementById('adminSidebar').classList.remove('open');
+    });
+
+    function navigate(section, el) {
+      document.querySelectorAll('.snav-item').forEach(i => i.classList.remove('active'));
+      el?.classList.add('active');
+      const titles = { dashboard: 'Dashboard', users: 'Manage Users', posts: 'Manage Posts' };
+      document.getElementById('pageTitle').textContent = titles[section] || 'Admin';
+      history.pushState({}, '', `/admin/${section}`);
+      const loaders = { dashboard: loadDashboard, users: loadUsers, posts: loadPosts };
+      (loaders[section] || loadDashboard)();
+    }
+
+    // ─── DASHBOARD ────────────────────────────────────────────────────────────
+    async function loadDashboard() {
+      showLoader();
+      const res = await fetch('/api/admin/stats');
+      if (!res.ok) { showUnauthorized(); return; }
+      const d = await res.json();
+
+      document.getElementById('adminContent').innerHTML = `
+        <!-- STAT CARDS -->
+        <div class="stat-cards">
+          <div class="stat-card purple">
+            <div class="sc-icon"><i class="fas fa-users"></i></div>
+            <div class="sc-info"><span class="sc-num">${d.totalUsers}</span><span class="sc-lbl">Total Users</span></div>
+          </div>
+          <div class="stat-card blue">
+            <div class="sc-icon"><i class="fas fa-newspaper"></i></div>
+            <div class="sc-info"><span class="sc-num">${d.totalPosts}</span><span class="sc-lbl">Total Posts</span></div>
+          </div>
+          <div class="stat-card green">
+            <div class="sc-icon"><i class="fas fa-comments"></i></div>
+            <div class="sc-info"><span class="sc-num">${d.totalComments}</span><span class="sc-lbl">Total Comments</span></div>
+          </div>
+          <div class="stat-card red">
+            <div class="sc-icon"><i class="fas fa-ban"></i></div>
+            <div class="sc-info"><span class="sc-num">${d.bannedUsers}</span><span class="sc-lbl">Banned Users</span></div>
+          </div>
+        </div>
+
+        <!-- CHARTS ROW -->
+        <div class="dashboard-grid">
+          <!-- Category Distribution -->
+          <div class="admin-card">
+            <div class="card-header"><h4><i class="fas fa-chart-pie"></i> Posts by Category</h4></div>
+            <div class="card-body">
+              ${d.categoryStats.map(c => {
+                const pct = Math.round((c.count / d.totalPosts) * 100) || 0;
+                return `<div class="cat-bar-row">
+                  <span class="cat-name">${c._id}</span>
+                  <div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:${pct}%"></div></div>
+                  <span class="cat-count">${c.count}</span>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Recent Users -->
+          <div class="admin-card">
+            <div class="card-header">
+              <h4><i class="fas fa-user-plus"></i> Recent Users</h4>
+              <button class="btn btn-outline btn-sm" onclick="navigate('users', document.querySelector('[data-section=users]'))">View All</button>
+            </div>
+            <div class="card-body">
+              <table class="admin-table">
+                <thead><tr><th>User</th><th>Role</th><th>Joined</th></tr></thead>
+                <tbody>
+                  ${d.recentUsers.map(u => `
+                    <tr>
+                      <td><div class="table-user"><div class="tu-avatar">${u.username.charAt(0).toUpperCase()}</div>${u.username}</div></td>
+                      <td><span class="role-pill ${u.role}">${u.role}</span></td>
+                      <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Recent Posts -->
+          <div class="admin-card span-full">
+            <div class="card-header">
+              <h4><i class="fas fa-clock"></i> Recent Posts</h4>
+              <button class="btn btn-outline btn-sm" onclick="navigate('posts', document.querySelector('[data-section=posts]'))">View All</button>
+            </div>
+            <div class="card-body">
+              <table class="admin-table">
+                <thead><tr><th>Title</th><th>Author</th><th>Category</th><th>Views</th><th>Likes</th><th>Status</th></tr></thead>
+                <tbody>
+                  ${d.recentPosts.map(p => `
+                    <tr>
+                      <td><a href="/blog/${p.slug}" class="table-link">${p.title}</a></td>
+                      <td>${p.author?.username || 'N/A'}</td>
+                      <td><span class="tag">${p.category}</span></td>
+                      <td>${p.views}</td>
+                      <td>${p.likes?.length || 0}</td>
+                      <td><span class="status-pill ${p.published ? 'published' : 'draft'}">${p.published ? 'Published' : 'Draft'}</span></td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>`;
+
+      // Animate bars
+      setTimeout(() => {
+        document.querySelectorAll('.cat-bar-fill').forEach(b => { b.style.transition = 'width 0.8s ease'; });
+      }, 100);
+    }
+
+    // ─── USERS ────────────────────────────────────────────────────────────────
+    let userPage = 1, userSearch = '';
+    async function loadUsers(page = 1, search = '') {
+      userPage = page; userSearch = search;
+      showLoader();
+      const res = await fetch(`/api/admin/users?page=${page}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) { showUnauthorized(); return; }
+      const data = await res.json();
+
+      document.getElementById('adminContent').innerHTML = `
+        <div class="table-toolbar">
+          <div class="search-bar" style="max-width:320px">
+            <i class="fas fa-search"></i>
+            <input type="text" id="userSearchInput" placeholder="Search users..." value="${search}"/>
+          </div>
+          <span class="result-count">${data.total} users</span>
+        </div>
+        <div class="admin-card">
+          <div class="card-body" style="padding:0">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>User</th><th>Email</th><th>Role</th><th>Posts</th><th>Joined</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.users.map(u => `
+                  <tr id="user-row-${u._id}">
+                    <td>
+                      <div class="table-user">
+                        <div class="tu-avatar">${u.username.charAt(0).toUpperCase()}</div>
+                        <div>
+                          <strong>${u.username}</strong>
+                          ${u.lastLogin ? `<br/><small style="color:var(--text-light)">Last: ${new Date(u.lastLogin).toLocaleDateString()}</small>` : ''}
+                        </div>
+                      </div>
+                    </td>
+                    <td style="font-size:.85rem">${u.email}</td>
+                    <td><span class="role-pill ${u.role}" id="role-pill-${u._id}">${u.role}</span></td>
+                    <td>${u.postCount}</td>
+                    <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td>
+                      <span class="status-pill ${u.banned ? 'banned' : 'active'}" id="ban-pill-${u._id}">
+                        ${u.banned ? '🚫 Banned' : '✅ Active'}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="action-btns">
+                        <button class="icon-btn blue" title="View Profile" onclick="window.open('/profile/${u._id}','_blank')"><i class="fas fa-eye"></i></button>
+                        <button class="icon-btn ${u.role === 'admin' ? 'orange' : 'purple'}" title="${u.role === 'admin' ? 'Demote to User' : 'Promote to Admin'}"
+                          onclick="toggleRole('${u._id}', '${u.role}', this)"><i class="fas fa-shield-alt"></i></button>
+                        <button class="icon-btn ${u.banned ? 'green' : 'red'}" title="${u.banned ? 'Unban User' : 'Ban User'}" id="ban-btn-${u._id}"
+                          onclick="${u.banned ? `unbanUser('${u._id}')` : `promptBan('${u._id}')`}"><i class="fas fa-${u.banned ? 'unlock' : 'ban'}"></i></button>
+                        <button class="icon-btn red" title="Delete User" onclick="deleteUser('${u._id}')"><i class="fas fa-trash"></i></button>
+                      </div>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        ${renderPagination(data.page, data.pages, 'loadUsers')}`;
+
+      document.getElementById('userSearchInput').addEventListener('keyup', e => {
+        if (e.key === 'Enter') loadUsers(1, e.target.value);
+      });
+    }
+
+    async function toggleRole(id, current, btn) {
+      if (!confirm(`${current === 'admin' ? 'Demote to user' : 'Promote to admin'}?`)) return;
+      const res = await fetch(`/api/admin/users/${id}/role`, { method: 'PUT' });
+      const data = await res.json();
+      if (data.success) {
+        const pill = document.getElementById(`role-pill-${id}`);
+        pill.textContent = data.role;
+        pill.className = `role-pill ${data.role}`;
+        btn.className = `icon-btn ${data.role === 'admin' ? 'orange' : 'purple'}`;
+        btn.title = data.role === 'admin' ? 'Demote to User' : 'Promote to Admin';
+        showToast(`User ${data.role === 'admin' ? 'promoted to admin' : 'demoted to user'}!`, 'success');
+      }
+    }
+
+    function promptBan(id) {
+      banTargetId = id;
+      document.getElementById('banReason').value = '';
+      openModal('banModal');
+    }
+
+    async function confirmBan() {
+      const reason = document.getElementById('banReason').value;
+      const res = await fetch(`/api/admin/users/${banTargetId}/ban`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeModal('banModal');
+        const pill = document.getElementById(`ban-pill-${banTargetId}`);
+        const btn = document.getElementById(`ban-btn-${banTargetId}`);
+        if (data.banned) {
+          pill.textContent = '🚫 Banned'; pill.className = 'status-pill banned';
+          btn.className = 'icon-btn green'; btn.title = 'Unban User';
+          btn.innerHTML = '<i class="fas fa-unlock"></i>';
+          btn.onclick = () => unbanUser(banTargetId);
+        }
+        showToast('User banned.', 'success');
+      }
+    }
+
+    async function unbanUser(id) {
+      if (!confirm('Unban this user?')) return;
+      const res = await fetch(`/api/admin/users/${id}/ban`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: '' }) });
+      const data = await res.json();
+      if (data.success && !data.banned) {
+        const pill = document.getElementById(`ban-pill-${id}`);
+        const btn = document.getElementById(`ban-btn-${id}`);
+        pill.textContent = '✅ Active'; pill.className = 'status-pill active';
+        btn.className = 'icon-btn red'; btn.title = 'Ban User';
+        btn.innerHTML = '<i class="fas fa-ban"></i>';
+        btn.onclick = () => promptBan(id);
+        showToast('User unbanned.', 'success');
+      }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm('PERMANENTLY delete this user and ALL their posts?')) return;
+      const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+      if ((await res.json()).success) {
+        document.getElementById(`user-row-${id}`)?.remove();
+        showToast('User deleted.', 'success');
+      }
+    }
+
+    // ─── POSTS ────────────────────────────────────────────────────────────────
+    let postPage = 1, postSearch = '';
+    async function loadPosts(page = 1, search = '') {
+      postPage = page; postSearch = search;
+      showLoader();
+      const res = await fetch(`/api/admin/posts?page=${page}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) { showUnauthorized(); return; }
+      const data = await res.json();
+
+      document.getElementById('adminContent').innerHTML = `
+        <div class="table-toolbar">
+          <div class="search-bar" style="max-width:320px">
+            <i class="fas fa-search"></i>
+            <input type="text" id="postSearchInput" placeholder="Search posts..." value="${search}"/>
+          </div>
+          <span class="result-count">${data.total} posts</span>
+        </div>
+        <div class="admin-card">
+          <div class="card-body" style="padding:0">
+            <table class="admin-table">
+              <thead>
+                <tr><th>Title</th><th>Author</th><th>Category</th><th>Views</th><th>Likes</th><th>Comments</th><th>Status</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                ${data.posts.map(p => `
+                  <tr id="post-row-${p._id}">
+                    <td style="max-width:240px">
+                      <a href="/blog/${p.slug}" class="table-link" target="_blank" title="${p.title}">${p.title.length > 50 ? p.title.substring(0,50)+'...' : p.title}</a>
+                      <br/><small style="color:var(--text-light)">${new Date(p.createdAt).toLocaleDateString()}</small>
+                    </td>
+                    <td>${p.author?.username || 'N/A'}</td>
+                    <td><span class="tag">${p.category}</span></td>
+                    <td>${p.views}</td>
+                    <td>${p.likes?.length || 0}</td>
+                    <td>${p.comments?.length || 0}</td>
+                    <td>
+                      <span class="status-pill ${p.published ? 'published' : 'draft'}" id="status-pill-${p._id}">
+                        ${p.published ? 'Published' : 'Draft'}
+                      </span>
+                    </td>
+                    <td>
+                      <div class="action-btns">
+                        <a href="/blog/${p.slug}" target="_blank" class="icon-btn blue" title="View"><i class="fas fa-eye"></i></a>
+                        <button class="icon-btn orange" title="${p.published ? 'Unpublish' : 'Publish'}" onclick="togglePost('${p._id}', this)"><i class="fas fa-toggle-${p.published ? 'on' : 'off'}"></i></button>
+                        <button class="icon-btn red" title="Delete" onclick="deletePost('${p._id}')"><i class="fas fa-trash"></i></button>
+                      </div>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        ${renderPagination(data.page, data.pages, 'loadPosts')}`;
+
+      document.getElementById('postSearchInput').addEventListener('keyup', e => {
+        if (e.key === 'Enter') loadPosts(1, e.target.value);
+      });
+    }
+
+    async function togglePost(id, btn) {
+      const res = await fetch(`/api/admin/posts/${id}/toggle`, { method: 'PUT' });
+      const data = await res.json();
+      if (data.success) {
+        const pill = document.getElementById(`status-pill-${id}`);
+        pill.textContent = data.published ? 'Published' : 'Draft';
+        pill.className = `status-pill ${data.published ? 'published' : 'draft'}`;
+        btn.innerHTML = `<i class="fas fa-toggle-${data.published ? 'on' : 'off'}"></i>`;
+        btn.title = data.published ? 'Unpublish' : 'Publish';
+        showToast(data.published ? 'Post published.' : 'Post unpublished.', 'success');
+      }
+    }
+
+    async function deletePost(id) {
+      if (!confirm('Delete this post permanently?')) return;
+      const res = await fetch(`/api/admin/posts/${id}`, { method: 'DELETE' });
+      if ((await res.json()).success) {
+        document.getElementById(`post-row-${id}`)?.remove();
+        showToast('Post deleted.', 'success');
+      }
+    }
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────
+    function renderPagination(current, total, fn) {
+      if (total <= 1) return '';
+      let html = '<div class="pagination" style="margin-top:24px">';
+      if (current > 1) html += `<button class="page-btn" onclick="${fn}(${current - 1}, '${userSearch || postSearch}')"><i class="fas fa-chevron-left"></i></button>`;
+      for (let i = 1; i <= total; i++) html += `<button class="page-btn ${i === current ? 'active' : ''}" onclick="${fn}(${i}, '${userSearch || postSearch}')">${i}</button>`;
+      if (current < total) html += `<button class="page-btn" onclick="${fn}(${current + 1}, '${userSearch || postSearch}')"><i class="fas fa-chevron-right"></i></button>`;
+      return html + '</div>';
+    }
+
+    function showLoader() {
+      document.getElementById('adminContent').innerHTML = '<div class="loading" style="padding:100px"><div class="spinner"></div><p>Loading...</p></div>';
+    }
+
+    function showUnauthorized() {
+      document.getElementById('adminContent').innerHTML = '<div class="error-state container"><i class="fas fa-lock"></i><h2>Admin Access Required</h2><a href="/" class="btn btn-primary">Go Home</a></div>';
+    }
+
+    function openModal(id) {
+      document.getElementById(id).style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+    function closeModal(id) {
+      document.getElementById(id).style.display = 'none';
+      document.body.style.overflow = '';
+    }
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    });
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.className = `toast toast-${type} show`;
+      setTimeout(() => toast.className = 'toast', 3000);
+    }
+  </script>
+</body>
+</html>

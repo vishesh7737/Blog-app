@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BlogHub – Write</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+</head>
+<body>
+  <nav class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-logo"><i class="fas fa-feather-alt"></i> BlogHub</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Home</a>
+        <div id="authSection" class="nav-auth"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="editor-page">
+    <div class="editor-header">
+      <div class="editor-breadcrumb">
+        <a href="/"><i class="fas fa-home"></i></a>
+        <span>/</span>
+        <span id="editorTitle">New Post</span>
+      </div>
+      <div class="editor-actions">
+        <button class="btn btn-outline" id="previewBtn" onclick="togglePreview()">
+          <i class="fas fa-eye"></i> Preview
+        </button>
+        <button class="btn btn-outline" id="draftBtn">
+          <i class="fas fa-save"></i> Save Draft
+        </button>
+        <button class="btn btn-primary" id="publishBtn">
+          <i class="fas fa-paper-plane"></i> Publish
+        </button>
+      </div>
+    </div>
+
+    <div class="alert" id="editorAlert" style="display:none"></div>
+
+    <div class="editor-layout">
+      <!-- EDITOR PANEL -->
+      <div class="editor-panel" id="editorPanel">
+        <input type="text" id="postTitle" class="editor-title-input" placeholder="Your Post Title..." maxlength="150"/>
+        
+        <!-- Rich Text Toolbar -->
+        <div class="editor-toolbar">
+          <button type="button" onclick="formatText('bold')" title="Bold"><i class="fas fa-bold"></i></button>
+          <button type="button" onclick="formatText('italic')" title="Italic"><i class="fas fa-italic"></i></button>
+          <button type="button" onclick="formatText('underline')" title="Underline"><i class="fas fa-underline"></i></button>
+          <div class="toolbar-sep"></div>
+          <button type="button" onclick="formatHeading(2)" title="Heading 2">H2</button>
+          <button type="button" onclick="formatHeading(3)" title="Heading 3">H3</button>
+          <div class="toolbar-sep"></div>
+          <button type="button" onclick="formatText('insertUnorderedList')" title="Bullet List"><i class="fas fa-list-ul"></i></button>
+          <button type="button" onclick="formatText('insertOrderedList')" title="Numbered List"><i class="fas fa-list-ol"></i></button>
+          <div class="toolbar-sep"></div>
+          <button type="button" onclick="insertLink()" title="Link"><i class="fas fa-link"></i></button>
+          <button type="button" onclick="formatText('formatBlock', 'blockquote')" title="Quote"><i class="fas fa-quote-left"></i></button>
+          <button type="button" onclick="formatText('formatBlock', 'pre')" title="Code"><i class="fas fa-code"></i></button>
+          <div class="toolbar-sep"></div>
+          <button type="button" onclick="formatText('removeFormat')" title="Clear Format"><i class="fas fa-remove-format"></i></button>
+        </div>
+
+        <div id="postContent" class="editor-content" contenteditable="true"
+             data-placeholder="Write your story here..."></div>
+
+        <div class="word-count"><span id="wordCount">0</span> words</div>
+      </div>
+
+      <!-- PREVIEW PANEL -->
+      <div class="preview-panel" id="previewPanel" style="display:none">
+        <div class="preview-content">
+          <h1 id="previewTitle"></h1>
+          <div id="previewBody"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR SETTINGS -->
+    <div class="editor-sidebar">
+      <div class="sidebar-section">
+        <h4><i class="fas fa-image"></i> Cover Image</h4>
+        <input type="url" id="coverImage" placeholder="Paste image URL..." class="form-input"/>
+        <div id="coverPreview" class="cover-preview" style="display:none">
+          <img id="coverImg" src="" alt="Cover"/>
+          <button type="button" onclick="clearCover()" class="remove-cover"><i class="fas fa-times"></i></button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4><i class="fas fa-folder"></i> Category</h4>
+        <select id="postCategory" class="form-input">
+          <option value="General">General</option>
+          <option value="Technology">Technology</option>
+          <option value="Travel">Travel</option>
+          <option value="Food">Food</option>
+          <option value="Lifestyle">Lifestyle</option>
+          <option value="Business">Business</option>
+          <option value="Health">Health</option>
+          <option value="Education">Education</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="sidebar-section">
+        <h4><i class="fas fa-tags"></i> Tags</h4>
+        <input type="text" id="postTags" placeholder="tag1, tag2, tag3" class="form-input"/>
+        <small>Comma-separated tags</small>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let isEditMode = false;
+    let editPostId = null;
+    let previewMode = false;
+
+    // Check auth
+    window.addEventListener('DOMContentLoaded', async () => {
+      const user = await checkAuth();
+      if (!user.loggedIn) {
+        window.location.href = '/auth/login';
+        return;
+      }
+
+      // Check if editing
+      const pathParts = window.location.pathname.split('/');
+      if (pathParts[2] === 'edit' && pathParts[3]) {
+        editPostId = pathParts[3];
+        isEditMode = true;
+        document.getElementById('editorTitle').textContent = 'Edit Post';
+        document.getElementById('publishBtn').innerHTML = '<i class="fas fa-save"></i> Update Post';
+        await loadPostForEdit(editPostId);
+      }
+
+      // Cover image preview
+      document.getElementById('coverImage').addEventListener('input', function() {
+        if (this.value) {
+          document.getElementById('coverImg').src = this.value;
+          document.getElementById('coverPreview').style.display = 'block';
+        } else {
+          document.getElementById('coverPreview').style.display = 'none';
+        }
+      });
+
+      // Word count
+      document.getElementById('postContent').addEventListener('input', () => {
+        const text = document.getElementById('postContent').innerText;
+        const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+        document.getElementById('wordCount').textContent = words;
+      });
+    });
+
+    async function loadPostForEdit(postId) {
+      // We need the slug but we have the ID. First find via my-posts
+      const res = await fetch('/api/my-posts');
+      const posts = await res.json();
+      const post = posts.find(p => p._id === postId);
+      if (!post) return;
+
+      // Fetch full post
+      const res2 = await fetch(`/api/posts/${post.slug}`);
+      const fullPost = await res2.json();
+
+      document.getElementById('postTitle').value = fullPost.title;
+      document.getElementById('postContent').innerHTML = fullPost.content;
+      document.getElementById('postCategory').value = fullPost.category;
+      document.getElementById('postTags').value = (fullPost.tags || []).join(', ');
+      if (fullPost.coverImage) {
+        document.getElementById('coverImage').value = fullPost.coverImage;
+        document.getElementById('coverImg').src = fullPost.coverImage;
+        document.getElementById('coverPreview').style.display = 'block';
+      }
+    }
+
+    function formatText(command, value = null) {
+      document.getElementById('postContent').focus();
+      document.execCommand(command, false, value);
+    }
+
+    function formatHeading(level) {
+      document.execCommand('formatBlock', false, `h${level}`);
+    }
+
+    function insertLink() {
+      const url = prompt('Enter URL:');
+      if (url) document.execCommand('createLink', false, url);
+    }
+
+    function clearCover() {
+      document.getElementById('coverImage').value = '';
+      document.getElementById('coverPreview').style.display = 'none';
+    }
+
+    function togglePreview() {
+      previewMode = !previewMode;
+      const editorPanel = document.getElementById('editorPanel');
+      const previewPanel = document.getElementById('previewPanel');
+      const btn = document.getElementById('previewBtn');
+
+      if (previewMode) {
+        document.getElementById('previewTitle').textContent = document.getElementById('postTitle').value;
+        document.getElementById('previewBody').innerHTML = document.getElementById('postContent').innerHTML;
+        editorPanel.style.display = 'none';
+        previewPanel.style.display = 'block';
+        btn.innerHTML = '<i class="fas fa-edit"></i> Edit';
+      } else {
+        editorPanel.style.display = 'block';
+        previewPanel.style.display = 'none';
+        btn.innerHTML = '<i class="fas fa-eye"></i> Preview';
+      }
+    }
+
+    async function submitPost(published) {
+      const title = document.getElementById('postTitle').value.trim();
+      const content = document.getElementById('postContent').innerHTML.trim();
+
+      if (!title) return showEditorAlert('Please add a title.', 'error');
+      if (!content || content === '<br>') return showEditorAlert('Please write some content.', 'error');
+
+      const payload = {
+        title,
+        content,
+        category: document.getElementById('postCategory').value,
+        tags: document.getElementById('postTags').value,
+        coverImage: document.getElementById('coverImage').value,
+        published
+      };
+
+      try {
+        let res, data;
+        if (isEditMode) {
+          res = await fetch(`/api/posts/${editPostId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          res = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
+        data = await res.json();
+        if (data.success) {
+          showEditorAlert(isEditMode ? 'Post updated!' : 'Post published!', 'success');
+          setTimeout(() => window.location.href = `/blog/${data.post.slug}`, 1200);
+        } else {
+          showEditorAlert(data.error || 'Something went wrong.', 'error');
+        }
+      } catch (err) {
+        showEditorAlert('Network error.', 'error');
+      }
+    }
+
+    function showEditorAlert(msg, type) {
+      const el = document.getElementById('editorAlert');
+      el.textContent = msg;
+      el.className = `alert alert-${type}`;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 4000);
+    }
+
+    document.getElementById('publishBtn').addEventListener('click', () => submitPost(true));
+    document.getElementById('draftBtn').addEventListener('click', () => submitPost(false));
+  </script>
+</body>
+</html>
